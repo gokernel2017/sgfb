@@ -1,6 +1,6 @@
 //--------------------------------------------------------------------
 //
-// SGFB ( SUMMER GRAPHIC FRAME BUFFER ) | Linux Frame Buffer Library
+// SGFB ( Summer Graphic Frame Buffer ) | Linux Frame Buffer Library.
 //
 // FILE:
 //   sgfb.c
@@ -17,29 +17,7 @@
 //
 //--------------------------------------------------------------------
 //
-#include <string.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <linux/fb.h>
-#include <unistd.h>
-#include <sys/mman.h>
-#include <sys/ioctl.h>
-#include <math.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <wchar.h>
-#include <time.h>
-#include <termios.h>
-
-#define COLOR_WHITE32 16777215
-
-enum {
-    EV_KEY = 1,
-    EV_MOUSE_MOVE,
-    EV_MOUSE_DOWN
-};
-
+#include "sgfb.h"
 
 static const unsigned char fixed_font[14][764] = {
   "                                   xx                                                                                                                                                                                                                                                                                                                                                                                                                                                                              xx             xxx                                                                                                                                                                                                                                                      ",
@@ -58,65 +36,51 @@ static const unsigned char fixed_font[14][764] = {
   "                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          xxxx            xxxx          xxxxxxxx                                                         xxxxx                   xxxx                                            xx          xx                                                         xxxx                       xx                      ",
 };
 
-//--------------------------------------------------------------------
-//#########################  ENUM / DEFINE  ##########################
-//--------------------------------------------------------------------
+//-----------------------------------------------
+//------------------  STRUCT  -------------------
+//-----------------------------------------------
 //
-#define UCHAR unsigned char
-#define CHAR_SPACE 32
-
-//--------------------------------------------------------------------
-//#############################  STRUCT  #############################
-//--------------------------------------------------------------------
-//
-typedef struct {
+typedef struct { // opaque/private struct
     UCHAR   *screen;
-    int     smem_len; // fb_fix_info.smem_len
     int     w;        // fb_var_info.xres
     int     h;        // fb_var_info.yres
     int     bpp;      // 8 | 16 | 32
     int     line_length;
+    int     smem_len; // fb_fix_info.smem_len
     int     accel_flags;
-    char    drive_name [20];
     //---------------------
-    int     fd;       // file id
+    int     fb_fd;       // file id
     int     tty_fd;
     int     mouse_fd;
+    //---------------------
+    char    drive_name [20];
+    int     initialized;
+    struct  termios tty_config;
+    struct  termios tty_oldconfig;
 }FB_DRIVE;
-typedef struct {
-    UCHAR   *data; // pixels
-    int     w;
-    int     h;
-    int     line_length;
-}BMP;
-typedef struct {
-    char  type;
-    int   x;
-    int   y;
-    int  key;
-}SG_Event;
+
 typedef struct {
     int a, b;
 }DATA_8;
 
+//-----------------------------------------------
 static FB_DRIVE FB;
+static int mouse_x, mouse_y;
+static int old_x, old_y;
+static int pixel_save1, pixel_save2, pixel_save3, pixel_save4;
+static int key = 0;
+static int button = 0;
+//-----------------------------------------------
 
 SG_Event event;
-struct termios tty_config;
-struct termios tty_oldconfig;
-
 int count;
 int nread;
-int key;
-int button = 0;
-int mouse_x, mouse_y;
-int old_x, old_y;
 
-char buf[100];
-int fps;
-
-int color;
-int pixel_save1, pixel_save2, pixel_save3, pixel_save4;
+//-----------------------------------------------
+//----------------  PROTOTYPES  -----------------
+//-----------------------------------------------
+//
+static void sgDrawCursor32 (int x, int y);
 
 int init_mouse (void) {
     if ((FB.mouse_fd = open("/dev/psaux", O_RDONLY | O_NONBLOCK)) == -1) {
@@ -207,19 +171,18 @@ static void handle_keyboard(_THIS) {
 */
 
 int sgInit (void) {
-    static int init = 0;
     struct fb_var_screeninfo fb_var_info;
     struct fb_fix_screeninfo fb_fix_info;
 
-    if (init == 0) {
-        init = 1;
-        FB.fd = open ("/dev/fb0", O_RDWR);
-        if (FB.fd < 0) {
+    if (FB.initialized == 0) {
+        FB.initialized = 1;
+        FB.fb_fd = open ("/dev/fb0", O_RDWR);
+        if (FB.fb_fd < 0) {
             printf ("Frame Buffer Not Found ( /dev/fb0 )\n");
             return 0;
         }
-        ioctl (FB.fd, FBIOGET_FSCREENINFO, &fb_fix_info);
-        ioctl (FB.fd, FBIOGET_VSCREENINFO, &fb_var_info);
+        ioctl (FB.fb_fd, FBIOGET_FSCREENINFO, &fb_fix_info);
+        ioctl (FB.fb_fd, FBIOGET_VSCREENINFO, &fb_var_info);
 
         FB.smem_len = fb_fix_info.smem_len;
         FB.w        = fb_var_info.xres;
@@ -230,7 +193,7 @@ int sgInit (void) {
 
         sprintf (FB.drive_name, "%s", fb_fix_info.id);
 
-        FB.screen = (UCHAR*) mmap (NULL, FB.smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, FB.fd, 0);
+        FB.screen = (UCHAR*) mmap (NULL, FB.smem_len, PROT_READ | PROT_WRITE, MAP_SHARED, FB.fb_fd, 0);
 
         printf ("... Starting LIBFB ...\n");
         printf ("    Dive: %s\n", FB.drive_name);
@@ -238,7 +201,7 @@ int sgInit (void) {
         printf ("       h: %d\n", FB.h);
         printf ("     bpp: %d\n", FB.bpp);
         printf ("smem_len: %d\n", FB.smem_len);
-        printf ("      fd: %d\n", FB.fd);
+        printf ("    fb_fd: %d\n", FB.fb_fd);
         printf ("line_length = %d\n", FB.line_length);
         printf (" WIDTH  * 4 = %d\n", (FB.w * 4));
         printf (" HEIGHT * 4 = %d\n", FB.h * 4);
@@ -254,18 +217,30 @@ int sgInit (void) {
 
         if (FB.tty_fd < 0) {
             puts("Failed to open tty");
-            exit(6);
+            return 0;
         }
-        tcgetattr(FB.tty_fd, &tty_oldconfig);
+        tcgetattr(FB.tty_fd, &FB.tty_oldconfig);
 
-        tty_config = tty_oldconfig;
-        tty_config.c_iflag = 0;
-        tty_config.c_lflag &= ~(ECHO | ICANON | ISIG);
+        FB.tty_config = FB.tty_oldconfig;
+        FB.tty_config.c_iflag = 0;
+        FB.tty_config.c_lflag &= ~(ECHO | ICANON | ISIG);
 
-        tcsetattr(FB.tty_fd, TCSAFLUSH, &tty_config);
+        tcsetattr(FB.tty_fd, TCSAFLUSH, &FB.tty_config);
 
         printf("\e[?25l");
         fflush(stdout);
+
+        mouse_x = mouse_y = old_x = old_y = 300;
+
+        if (FB.bpp == 32) {
+            pixel_save1 = *(unsigned int *)(FB.screen + mouse_y * FB.line_length + mouse_x * 4);
+            pixel_save2 = *(unsigned int *)(FB.screen + mouse_y * FB.line_length + (mouse_x+1) * 4);
+            //
+            pixel_save3 = *(unsigned int *)(FB.screen + (mouse_y+1) * FB.line_length + mouse_x * 4);
+            pixel_save4 = *(unsigned int *)(FB.screen + (mouse_y+1) * FB.line_length + (mouse_x+1) * 4);
+        }
+
+        atexit (sgQuit);
 
         return 1;
     }
@@ -273,16 +248,21 @@ int sgInit (void) {
 }
 
 void sgQuit (void) {
-    munmap (FB.screen, FB.smem_len);
-    close (FB.fd);
-    close (FB.mouse_fd);
-    //-----------------------
-    // tty restore text mode:
-    //-----------------------
-    printf ("\e[?25h");
-    fflush (stdout);
-    tcsetattr (FB.tty_fd, TCSAFLUSH, &tty_oldconfig);
-    close (FB.tty_fd);
+    if (FB.initialized == 1) {
+        FB.initialized = 0;
+        munmap (FB.screen, FB.smem_len);
+        close (FB.fb_fd);
+        close (FB.mouse_fd);
+        //-----------------------
+        // tty restore text mode:
+        //-----------------------
+        printf ("\e[?25h");
+        fflush (stdout);
+        tcsetattr (FB.tty_fd, TCSAFLUSH, &FB.tty_oldconfig);
+        close (FB.tty_fd);
+
+        printf ("<<<<<<<<<<  sgQuit  >>>>>>>>>>\n");
+    }
 }
 
 
@@ -343,7 +323,7 @@ int makecol32 (UCHAR r, UCHAR g, UCHAR b) {
 }
 
 void sgBlit32 (BMP *bmp) {
-    int i, y, size_w_div_2 = bmp->w/2;;
+    int i, y, size_w_div_2 = bmp->w/2;
     register UCHAR *data = bmp->data;
     for (y = 0; y < bmp->h; y++) {
         UCHAR *p = (UCHAR*)(FB.screen + (y * FB.line_length + 0 * 4));
@@ -356,21 +336,83 @@ void sgBlit32 (BMP *bmp) {
             data += 8;
         }
     }
+    sgDrawCursor32 (mouse_x, mouse_y);
 }
 
-BMP *sgNewBmp32 (int w, int h) {
+void sgBlit16 (BMP *bmp) {
+    int i, y, size_w_div_2 = bmp->w/2;
+    register UCHAR *data = bmp->data;
+    for (y = 0; y < bmp->h; y++) {
+        UCHAR *p = (UCHAR*)(FB.screen + (y * FB.line_length + 0 * 2));
+        for (i = 0; i < size_w_div_2; i++) {
+            //
+            // ... copy 8 bytes (long) ... ;)
+            //
+            *(unsigned int *)( p ) = *(unsigned int *)( data );
+            p += 4;
+            data += 4;
+        }
+    }
+//    sgDrawCursor32 (mouse_x, mouse_y);
+}
+
+BMP * sgNewBmp (int w, int h) {
     BMP *bmp;
+    int len;
+
+    if (FB.bpp == 32) {
+        len = w * h * 4;
+    }
+    else if (FB.bpp == 16) {
+        len = w * h * 2;
+    } else {
+        printf ("Create BMP only: 16, 32 BPP\n");
+        return NULL;
+    }
+
     if ((bmp = (BMP*)malloc(sizeof(BMP))) != NULL) {
-        int len = w * h * 4;
         if ((bmp->data = (UCHAR*)malloc(len)) != NULL) {
             bmp->w = w;
             bmp->h = h;
-            bmp->line_length = w * 4;
+            if (FB.bpp == 32) {
+                bmp->line_length = w * 4;
+            }
+            else if (FB.bpp == 16) {
+                bmp->line_length = w * 2;
+            }
             memset (bmp->data, 32, len);
             return bmp;
         }
     }
     return NULL;
+}
+
+/*
+BMP *sgNewBmp16 (int w, int h) {
+    BMP *bmp;
+    if ((bmp = (BMP*)malloc(sizeof(BMP))) != NULL) {
+        int len = w * h * 2;
+        if ((bmp->data = (UCHAR*)malloc(len)) != NULL) {
+            bmp->w = w;
+            bmp->h = h;
+            bmp->line_length = w * 2;
+            memset (bmp->data, 32, len);
+            return bmp;
+        }
+    }
+    return NULL;
+}
+*/
+
+void sgFreeBmp (BMP *bmp) {
+    if (bmp) {
+        printf ("Freeing BMP ... ;)\n");
+        if (bmp->data) {
+            free (bmp->data);
+            bmp->data = NULL;
+        }
+        free (bmp);
+    }
 }
 
 void hlineBMP32 (BMP *bmp, int x1, int y, int x2, int color) {
@@ -390,6 +432,17 @@ void vlineBMP32 (BMP *bmp, int x, int y1, int y2, int color) {
         p += bmp->line_length;
     }
 }
+
+void sgFillRect (BMP *bmp, int x, int y, int w, int h, int color) {
+}
+
+void sgDrawRect (BMP *bmp, int x, int y, int w, int h, int color) {
+//    DrawHline(bmp, x, y, x+w, color);
+//    DrawHline(bmp, x, y+h, x+w, color);
+//    DrawVline(bmp, x, y, y+h, color);
+//    DrawVline(bmp, x+w, y, y+h, color);
+}
+
 
 void DrawPixel32 (BMP *bmp, int x, int y, int color) {
 //    int location = (x+fb_var_info.xoffset) * (fb_var_info.bits_per_pixel/8) +
@@ -450,7 +503,7 @@ void DrawText (BMP *bmp, char *text, int x, int y, int color) {
 // 3: plot
 //--------------------------------------------------------------------
 //
-void DrawCursor32 (int x, int y) {
+static void sgDrawCursor32 (int x, int y) {
     UCHAR *save  = (UCHAR*)(FB.screen + old_y * FB.line_length + old_x * 4);
     UCHAR *pixel = (UCHAR*)(FB.screen +     y * FB.line_length +     x * 4);
 
@@ -493,31 +546,32 @@ int sgEvent (SG_Event *ev) {
         return (ev->type = EV_KEY);
     }
     if (mouse_event()) {
-        if (button) {
-            return (ev->type = EV_MOUSE_DOWN);
-        }
         if (old_x != mouse_x || old_y != mouse_y) {
-            DrawCursor32 (mouse_x, mouse_y);
+            sgDrawCursor32 (mouse_x, mouse_y);
             old_x = mouse_x; old_y = mouse_y;
             ev->x = mouse_x;
             ev->y = mouse_y;
             return (ev->type = EV_MOUSE_MOVE);
+        }
+        ev->button = button;
+        if (ev->button) {
+            return (ev->type = EV_MOUSE_DOWN);
+        } else {
+            return (ev->type = EV_MOUSE_UP);
         }
     }
     return 0;
 }
 
 int main (void) {
+    int color;
+    char buf[100];
     BMP *b = NULL;
-
-    printf ("Sizeof sg_fix_screeninfo = %d\n", (int)sizeof(struct fb_fix_screeninfo));
-    printf ("Sizeof sg_var_screeninfo = %d\n", (int)sizeof(struct fb_var_screeninfo));
 
     if (sgInit()) {
 
-        if ((b = sgNewBmp32(800,600))) {
-            printf ("BITMAP CRIADO 800 X 600\n");
-        }
+        if ((b = sgNewBmp(800,600)) == NULL)
+            return -1;
 
         if (FB.bpp == 16)
             color = makecol16(255,130,30); // orange
@@ -526,7 +580,7 @@ int main (void) {
         }
 
         if (FB.bpp == 32 && b) {
-            sprintf (buf, "FPS: %d", fps);
+            sprintf (buf, "%s", "Move The Mouse | Press Any Key");
             hlineBMP32 (b, 50, 50, 450, color);  // -
             hlineBMP32 (b, 50, 150, 450, color); // -
             vlineBMP32 (b, 50, 50, 150, color);  // |
@@ -536,18 +590,11 @@ int main (void) {
             DrawText (b, "To exit press the key: ESC", 100, 125, color);
             sgBlit32 (b);
 
-            mouse_x = mouse_y = old_x = old_y = 300;
-            pixel_save1 = *(unsigned int *)(FB.screen + mouse_y * FB.line_length + mouse_x * 4);
-            pixel_save2 = *(unsigned int *)(FB.screen + mouse_y * FB.line_length + (mouse_x+1) * 4);
-            //
-            pixel_save3 = *(unsigned int *)(FB.screen + (mouse_y+1) * FB.line_length + mouse_x * 4);
-            pixel_save4 = *(unsigned int *)(FB.screen + (mouse_y+1) * FB.line_length + (mouse_x+1) * 4);
-
             for (;;) {
 
                 if (sgEvent(&event)) {
 
-                    if (button == 1 && mouse_x > 500) break;
+                    if (event.button == 1 && event.x > 500) break;
 
                     if (event.type == EV_KEY) {
                         if (event.key == 27) {
@@ -584,8 +631,6 @@ int main (void) {
                     //
                     sgBlit32 (b);
 
-                    DrawCursor32 (mouse_x, mouse_y);
-
                 }// if (sgEvent(&event))
 
                 usleep (1000);
@@ -594,8 +639,16 @@ int main (void) {
 
         }// if (FB.bpp == 32 && b)
 
+        if (FB.bpp == 16) {
+            sgBlit16 (b);
+        }
+
+        sgQuit();
         sgQuit();
     }
+
+    FREE_BMP (b);
+    FREE_BMP (b);
 
     printf ("Exiting With Sucess KEY: %d\n", key);
 
