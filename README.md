@@ -1,2 +1,2 @@
 # sgfb
-SGFB ( SUMMER GRAPHIC FRAME BUFFER ) | Linux Frame Buffer Library
+SGFB ( Summer Graphic Frame Buffer ) | Linux Frame Buffer Library
