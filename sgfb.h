@@ -38,10 +38,49 @@
 #define LIBIMPORT extern
 
 #define UCHAR unsigned char
-#define CHAR_SPACE 32
 #define COLOR_WHITE32 16777215
 
 #define FREE_BMP(b) sgFreeBmp(b); b=NULL;
+
+//---------------------------
+// START KEYS:
+//---------------------------
+#define SGK_TAB       9
+#define SGK_ENTER     13
+#define SGK_ESC       27
+#define SGK_SPACE     32
+//
+// ...
+//
+#define SGK_BACKSPACE 127
+// std SDLK_:
+#define SGK_UP        273
+#define SGK_DOWN      274
+#define SGK_RIGHT     275 // ->
+#define SGK_LEFT      276 // <-
+#define SGK_INSERT    277
+#define SGK_HOME      278
+#define SGK_END       279
+#define SGK_PAGEUP    280
+#define SGK_PAGEDOWN  281
+// std SDLK_:
+#define SGK_F1        282
+#define SGK_F2        283
+#define SGK_F3        284
+#define SGK_F4        285
+#define SGK_F5        286
+#define SGK_F6        287
+#define SGK_F7        288
+#define SGK_F8        289
+#define SGK_F9        290
+#define SGK_F10       291
+#define SGK_F11       292
+#define SGK_F12       293
+//
+#define SGK_DELETE    400
+//---------------------------
+// END KEYS:
+//---------------------------
 
 enum {
     EV_KEY = 1,
@@ -77,10 +116,14 @@ LIBIMPORT int   sgInit      (void);
 LIBIMPORT void  sgQuit      (void);
 LIBIMPORT int   sgEvent     (SG_Event *ev);
 
-LIBIMPORT BMP * sgNewBmp    (int w, int h);
+LIBIMPORT BMP * sgNewBmp    (int w, int h); // 16/32 BPP
 
 LIBIMPORT void  sgBlit16    (BMP *bmp);
 LIBIMPORT void  sgBlit32    (BMP *bmp);
+
+// 16/32 BPP:
+LIBIMPORT void  sgDrawRect  (BMP *bmp, int x, int y, int w, int h, int color);
+LIBIMPORT void  sgDrawText  (BMP *bmp, char *text, int x, int y, int color);
 
 LIBIMPORT void  sgFreeBmp   (BMP *bmp);
 

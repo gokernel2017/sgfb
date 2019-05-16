@@ -19,6 +19,8 @@
 //
 #include "sgfb.h"
 
+#define CHAR_SPACE 32
+
 static const unsigned char fixed_font[14][764] = {
   "                                   xx                                                                                                                                                                                                                                                                                                                                                                                                                                                                              xx             xxx                                                                                                                                                                                                                                                      ",
   "                                   xx    xxx                                                                                                                                                                                                                                                                                                                                                                                                                                                                      xxxx             xx                                                                      xx       xx                                                                                                                                                                     ",
@@ -112,63 +114,80 @@ static int mouse_event (void) {
 }
 
 int keyboard_event (void) {
-    unsigned char keybuf [BUFSIZ];
-    int i;
-    if ((nread = read(FB.tty_fd, keybuf, BUFSIZ)) < 1) {
+    unsigned char buf [20];
+//    int i;
+    if ((nread = read(FB.tty_fd, buf, sizeof(buf))) < 1) {
         return 0;
     }
+//    for (i = 0; i < nread; i++) {
+//        key = buf[i] & 0x7F;
+//    }
+    key = buf[0] & 0x7F;
+    if (nread == 1)
+        return 1;
 
-    for (i = 0; i < nread; i++) {
-        key = keybuf[i] & 0x7F;
+    switch (nread) {
+    case 3:
+        key = buf[1] & 0x7F;
+        key = buf[2] & 0x7F;
+        if (key=='A') key = SGK_UP;
+        if (key=='B') key = SGK_DOWN;
+        if (key=='C') key = SGK_RIGHT;
+        if (key=='D') key = SGK_LEFT;
+        return 1;
+
+    case 4:
+    case 5:
+        key = buf[1] & 0x7F;
+        key = buf[2] & 0x7F;
+        key = buf[3] & 0x7F;
+
+        if (nread == 4) {
+            if (key=='~') {
+                key = buf[2];
+                if (key=='1') key = SGK_HOME;
+                else
+                if (key=='3') key = SGK_DELETE;
+                else
+                if (key=='4') key = SGK_END;
+                else
+                if (key=='5') key = SGK_PAGEUP;
+                else
+                if (key=='6') key = SGK_PAGEDOWN;
+            } else {
+                if (key=='A') key = SGK_F1;
+                else
+                if (key=='B') key = SGK_F2;
+                else
+                if (key=='C') key = SGK_F3;
+                else
+                if (key=='D') key = SGK_F4;
+                else
+                if (key=='E') key = SGK_F5;
+            }
+            return 1;
+        }
+        if (nread == 5) {
+            if (key=='7') key = SGK_F6;
+            else
+            if (key=='8') key = SGK_F7;
+            else
+            if (key=='9') key = SGK_F8;
+            else
+            if (key=='0') key = SGK_F9;
+            else
+            //------------------------
+            if (key=='1') key = SGK_F10;
+            else
+            if (key=='3') key = SGK_F11;
+            else
+            if (key=='4') key = SGK_F12;
+        }
     }
-    return 1;
-}
-/*
-static void handle_keyboard(_THIS) {
-	unsigned char keybuf[BUFSIZ];
-	int i, nread;
-	int pressed;
-	int scancode;
-	SDL_keysym keysym;
 
-	nread = read(keyboard_fd, keybuf, BUFSIZ);
-	for ( i=0; i<nread; ++i ) {
-		scancode = keybuf[i] & 0x7F;
-		if ( keybuf[i] & 0x80 ) {
-			pressed = SDL_RELEASED;
-		} else {
-			pressed = SDL_PRESSED;
-		}
-		TranslateKey(scancode, &keysym);
-		// Handle Ctrl-Alt-FN for vt switch 
-		switch (keysym.sym) {
-		    case SDLK_F1:
-		    case SDLK_F2:
-		    case SDLK_F3:
-		    case SDLK_F4:
-		    case SDLK_F5:
-		    case SDLK_F6:
-		    case SDLK_F7:
-		    case SDLK_F8:
-		    case SDLK_F9:
-		    case SDLK_F10:
-		    case SDLK_F11:
-		    case SDLK_F12:
-			if ( (SDL_GetModState() & KMOD_CTRL) &&
-			     (SDL_GetModState() & KMOD_ALT) ) {
-				if ( pressed ) {
-					switch_vt(this, (keysym.sym-SDLK_F1)+1);
-				}
-				break;
-			}
-			// Fall through to normal processing
-		    default:
-			posted += SDL_PrivateKeyboard(pressed, &keysym);
-			break;
-		}
-	}
-}
-*/
+    return 1;
+
+}// keyboard_event ()
 
 int sgInit (void) {
     struct fb_var_screeninfo fb_var_info;
@@ -387,23 +406,6 @@ BMP * sgNewBmp (int w, int h) {
     return NULL;
 }
 
-/*
-BMP *sgNewBmp16 (int w, int h) {
-    BMP *bmp;
-    if ((bmp = (BMP*)malloc(sizeof(BMP))) != NULL) {
-        int len = w * h * 2;
-        if ((bmp->data = (UCHAR*)malloc(len)) != NULL) {
-            bmp->w = w;
-            bmp->h = h;
-            bmp->line_length = w * 2;
-            memset (bmp->data, 32, len);
-            return bmp;
-        }
-    }
-    return NULL;
-}
-*/
-
 void sgFreeBmp (BMP *bmp) {
     if (bmp) {
         printf ("Freeing BMP ... ;)\n");
@@ -415,7 +417,24 @@ void sgFreeBmp (BMP *bmp) {
     }
 }
 
-void hlineBMP32 (BMP *bmp, int x1, int y, int x2, int color) {
+void sgDrawHline16 (BMP *bmp, int x1, int y, int x2, int color) {
+    UCHAR *p = (UCHAR*)(bmp->data + (y * bmp->line_length + x1 * 2));
+    int i;
+    for (i = x1; i <= x2; i++) {
+        *(unsigned short *)p = color; // Set color
+        p += 2;
+    }
+}
+void sgDrawVline16 (BMP *bmp, int x, int y1, int y2, int color) {
+    UCHAR *p = (UCHAR*)(bmp->data + (y1 * bmp->line_length + x * 2));
+    int i;
+    for (i = y1; i <= y2; i++) {
+        *(unsigned short *)p = color; // Set color
+        p += bmp->line_length;
+    }
+}
+
+void sgDrawHline32 (BMP *bmp, int x1, int y, int x2, int color) {
     UCHAR *p = (UCHAR*)(bmp->data + (y * bmp->line_length + x1 * 4));
     int i;
     for (i = x1; i <= x2; i++) {
@@ -423,8 +442,7 @@ void hlineBMP32 (BMP *bmp, int x1, int y, int x2, int color) {
         p += 4;
     }
 }
-
-void vlineBMP32 (BMP *bmp, int x, int y1, int y2, int color) {
+void sgDrawVline32 (BMP *bmp, int x, int y1, int y2, int color) {
     UCHAR *p = (UCHAR*)(bmp->data + (y1 * bmp->line_length + x * 4));
     int i;
     for (i = y1; i <= y2; i++) {
@@ -437,64 +455,118 @@ void sgFillRect (BMP *bmp, int x, int y, int w, int h, int color) {
 }
 
 void sgDrawRect (BMP *bmp, int x, int y, int w, int h, int color) {
-//    DrawHline(bmp, x, y, x+w, color);
-//    DrawHline(bmp, x, y+h, x+w, color);
-//    DrawVline(bmp, x, y, y+h, color);
-//    DrawVline(bmp, x+w, y, y+h, color);
+    if (FB.bpp==32) {
+        sgDrawHline32(bmp, x, y, x+w, color);
+        sgDrawHline32(bmp, x, y+h, x+w, color);
+        sgDrawVline32(bmp, x, y, y+h, color);
+        sgDrawVline32(bmp, x+w, y, y+h, color);
+    }
+    else if (FB.bpp==16) {
+        sgDrawHline16(bmp, x, y, x+w, color);
+        sgDrawHline16(bmp, x, y+h, x+w, color);
+        sgDrawVline16(bmp, x, y, y+h, color);
+        sgDrawVline16(bmp, x+w, y, y+h, color);
+    }
 }
 
+
+void DrawPixel16 (BMP *bmp, int x, int y, int color) {
+//    int location = (x+fb_var_info.xoffset) * (fb_var_info.bits_per_pixel/8) +
+//                       (y+fb_var_info.yoffset) * fb_fix_info.line_length;
+
+    *(unsigned short *)(bmp->data + y * bmp->line_length + x * 2) = color;
+}
 
 void DrawPixel32 (BMP *bmp, int x, int y, int color) {
 //    int location = (x+fb_var_info.xoffset) * (fb_var_info.bits_per_pixel/8) +
 //                       (y+fb_var_info.yoffset) * fb_fix_info.line_length;
 
-//    char *pix_pointer = (char *)(fbg->back_buffer + (y * fbg->line_length + x * fbg->components));
-
-//    if (fb_var_info.bits_per_pixel == 32)
-//        *((unsigned int*)(FB.screen + location)) = color;
-//    *(Uint32 *)(bmp->data + (y * bmp->line_length + x * 4)) = color;
     *(unsigned int *)(bmp->data + y * bmp->line_length + x * 4) = color;
 }
 
+
 // 8 x 13
-void DrawChar (BMP *bmp, char ch, int x, int y, int color) {
-  if (ch > 32) {
-    register unsigned char count;
-    register int xx;
+void DrawChar32 (BMP *bmp, char ch, int x, int y, int color) {
+    if (ch > CHAR_SPACE) {
+        register unsigned char count;
+        register int xx;
 
-    xx = (ch - CHAR_SPACE) * 8;
+        xx = (ch - CHAR_SPACE) * 8;
 
-    if (FB.bpp==32) {
-      // insert color
-      for (count=0; count < 8; count++) {
-        if (fixed_font[ 0][xx] == 'x') { DrawPixel32(bmp, x, y+0,  color); }
-        if (fixed_font[ 1][xx] == 'x') { DrawPixel32(bmp, x, y+1,  color); }
-        if (fixed_font[ 2][xx] == 'x') { DrawPixel32(bmp, x, y+2,  color); }
-        if (fixed_font[ 3][xx] == 'x') { DrawPixel32(bmp, x, y+3,  color); }
-        if (fixed_font[ 4][xx] == 'x') { DrawPixel32(bmp, x, y+4,  color); }
-        if (fixed_font[ 5][xx] == 'x') { DrawPixel32(bmp, x, y+5,  color); }
-        if (fixed_font[ 6][xx] == 'x') { DrawPixel32(bmp, x, y+6,  color); }
-        if (fixed_font[ 7][xx] == 'x') { DrawPixel32(bmp, x, y+7,  color); }
-        if (fixed_font[ 8][xx] == 'x') { DrawPixel32(bmp, x, y+8,  color); }
-        if (fixed_font[ 9][xx] == 'x') { DrawPixel32(bmp, x, y+9,  color); }
-        if (fixed_font[10][xx] == 'x') { DrawPixel32(bmp, x, y+10, color); }
-        if (fixed_font[11][xx] == 'x') { DrawPixel32(bmp, x, y+11, color); }
-        if (fixed_font[12][xx] == 'x') { DrawPixel32(bmp, x, y+12, color); }
-        if (fixed_font[13][xx] == 'x') { DrawPixel32(bmp, x, y+13, color); }
-        xx++; x++;
-      }
-      return;
+        if (FB.bpp==32) {
+            // insert color
+            for (count=0; count < 8; count++) {
+                if (fixed_font[ 0][xx] == 'x') { DrawPixel32(bmp, x, y+0,  color); }
+                if (fixed_font[ 1][xx] == 'x') { DrawPixel32(bmp, x, y+1,  color); }
+                if (fixed_font[ 2][xx] == 'x') { DrawPixel32(bmp, x, y+2,  color); }
+                if (fixed_font[ 3][xx] == 'x') { DrawPixel32(bmp, x, y+3,  color); }
+                if (fixed_font[ 4][xx] == 'x') { DrawPixel32(bmp, x, y+4,  color); }
+                if (fixed_font[ 5][xx] == 'x') { DrawPixel32(bmp, x, y+5,  color); }
+                if (fixed_font[ 6][xx] == 'x') { DrawPixel32(bmp, x, y+6,  color); }
+                if (fixed_font[ 7][xx] == 'x') { DrawPixel32(bmp, x, y+7,  color); }
+                if (fixed_font[ 8][xx] == 'x') { DrawPixel32(bmp, x, y+8,  color); }
+                if (fixed_font[ 9][xx] == 'x') { DrawPixel32(bmp, x, y+9,  color); }
+                if (fixed_font[10][xx] == 'x') { DrawPixel32(bmp, x, y+10, color); }
+                if (fixed_font[11][xx] == 'x') { DrawPixel32(bmp, x, y+11, color); }
+                if (fixed_font[12][xx] == 'x') { DrawPixel32(bmp, x, y+12, color); }
+                if (fixed_font[13][xx] == 'x') { DrawPixel32(bmp, x, y+13, color); }
+                xx++; x++;
+            }
+            return;
+        }
     }
-  }
+}
+// 8 x 13
+void DrawChar16 (BMP *bmp, char ch, int x, int y, int color) {
+    if (ch > CHAR_SPACE) {
+        register unsigned char count;
+        register int xx;
+
+        xx = (ch - CHAR_SPACE) * 8;
+
+        if (FB.bpp==16) {
+            // insert color
+            for (count=0; count < 8; count++) {
+                if (fixed_font[ 0][xx] == 'x') { DrawPixel16(bmp, x, y+0,  color); }
+                if (fixed_font[ 1][xx] == 'x') { DrawPixel16(bmp, x, y+1,  color); }
+                if (fixed_font[ 2][xx] == 'x') { DrawPixel16(bmp, x, y+2,  color); }
+                if (fixed_font[ 3][xx] == 'x') { DrawPixel16(bmp, x, y+3,  color); }
+                if (fixed_font[ 4][xx] == 'x') { DrawPixel16(bmp, x, y+4,  color); }
+                if (fixed_font[ 5][xx] == 'x') { DrawPixel16(bmp, x, y+5,  color); }
+                if (fixed_font[ 6][xx] == 'x') { DrawPixel16(bmp, x, y+6,  color); }
+                if (fixed_font[ 7][xx] == 'x') { DrawPixel16(bmp, x, y+7,  color); }
+                if (fixed_font[ 8][xx] == 'x') { DrawPixel16(bmp, x, y+8,  color); }
+                if (fixed_font[ 9][xx] == 'x') { DrawPixel16(bmp, x, y+9,  color); }
+                if (fixed_font[10][xx] == 'x') { DrawPixel16(bmp, x, y+10, color); }
+                if (fixed_font[11][xx] == 'x') { DrawPixel16(bmp, x, y+11, color); }
+                if (fixed_font[12][xx] == 'x') { DrawPixel16(bmp, x, y+12, color); }
+                if (fixed_font[13][xx] == 'x') { DrawPixel16(bmp, x, y+13, color); }
+                xx++; x++;
+            }
+            return;
+        }
+    }
 }
 
-void DrawText (BMP *bmp, char *text, int x, int y, int color) {
-  while (*text) {
-    if (*text > 32)
-      DrawChar (bmp, *text, x, y, color);
-    text++;
-    x += 8;
-  }
+
+void sgDrawText (BMP *bmp, char *text, int x, int y, int color) {
+    if (FB.bpp==32) {
+        while (*text) {
+            if (*text > CHAR_SPACE)
+                DrawChar32 (bmp, *text, x, y, color);
+            text++;
+            x += 8;
+        }
+        return;
+    }
+    if (FB.bpp==16) {
+        while (*text) {
+            if (*text > CHAR_SPACE)
+                DrawChar16 (bmp, *text, x, y, color);
+            text++;
+            x += 8;
+        }
+    }
 }
 
 //--------------------------------------------------------------------
@@ -579,15 +651,14 @@ int main (void) {
             color = makecol32(255,130,30);
         }
 
+        sgDrawRect (b, 50, 50, 450, 150, color);
+        sprintf (buf, "%s", "Move The Mouse | Press Any Key");
+        sgDrawText (b, "Please Wait 15 SECONDS: ...", 100, 75, color);
+        sgDrawText (b, buf, 100, 100, color);
+        sgDrawText (b, "To exit press the key: ESC", 100, 125, color);
+
         if (FB.bpp == 32 && b) {
-            sprintf (buf, "%s", "Move The Mouse | Press Any Key");
-            hlineBMP32 (b, 50, 50, 450, color);  // -
-            hlineBMP32 (b, 50, 150, 450, color); // -
-            vlineBMP32 (b, 50, 50, 150, color);  // |
-            vlineBMP32 (b, 450, 50, 150, color); // |
-            DrawText (b, "Please Wait 15 SECONDS: ...", 100, 75, color);
-            DrawText (b, buf, 100, 100, color);
-            DrawText (b, "To exit press the key: ESC", 100, 125, color);
+
             sgBlit32 (b);
 
             for (;;) {
@@ -597,7 +668,7 @@ int main (void) {
                     if (event.button == 1 && event.x > 500) break;
 
                     if (event.type == EV_KEY) {
-                        if (event.key == 27) {
+                        if (event.key == SGK_ESC) {
                             break;
                         }
                         sprintf (buf, "count: %d | key(%c) %d | NREAD: %d", count++, event.key, event.key, nread);
@@ -607,24 +678,24 @@ int main (void) {
 
                     // bg: FPS test
                     //---------------------------------------
-                    hlineBMP32 (b, 100, 100, 430, 0);  // -
-                    hlineBMP32 (b, 100, 101, 430, 0);  // -
-                    hlineBMP32 (b, 100, 102, 430, 0);  // -
-                    hlineBMP32 (b, 100, 103, 430, 0);  // -
-                    hlineBMP32 (b, 100, 104, 430, 0);  // -
-                    hlineBMP32 (b, 100, 105, 430, 0);  // -
-                    hlineBMP32 (b, 100, 106, 430, 0);  // -
-                    hlineBMP32 (b, 100, 107, 430, 0);  // -
-                    hlineBMP32 (b, 100, 108, 430, 0);  // -
-                    hlineBMP32 (b, 100, 109, 430, 0);  // -
-                    hlineBMP32 (b, 100, 110, 430, 0);  // -
-                    hlineBMP32 (b, 100, 111, 430, 0);  // -
-                    hlineBMP32 (b, 100, 112, 430, 0);  // -
-                    hlineBMP32 (b, 100, 113, 430, 0);  // -
-                    hlineBMP32 (b, 100, 114, 430, 0);  // -
+                    sgDrawHline32 (b, 100, 100, 430, 0);  // -
+                    sgDrawHline32 (b, 100, 101, 430, 0);  // -
+                    sgDrawHline32 (b, 100, 102, 430, 0);  // -
+                    sgDrawHline32 (b, 100, 103, 430, 0);  // -
+                    sgDrawHline32 (b, 100, 104, 430, 0);  // -
+                    sgDrawHline32 (b, 100, 105, 430, 0);  // -
+                    sgDrawHline32 (b, 100, 106, 430, 0);  // -
+                    sgDrawHline32 (b, 100, 107, 430, 0);  // -
+                    sgDrawHline32 (b, 100, 108, 430, 0);  // -
+                    sgDrawHline32 (b, 100, 109, 430, 0);  // -
+                    sgDrawHline32 (b, 100, 110, 430, 0);  // -
+                    sgDrawHline32 (b, 100, 111, 430, 0);  // -
+                    sgDrawHline32 (b, 100, 112, 430, 0);  // -
+                    sgDrawHline32 (b, 100, 113, 430, 0);  // -
+                    sgDrawHline32 (b, 100, 114, 430, 0);  // -
                     //---------------------------------------
 
-                    DrawText (b, buf, 100, 100, color);
+                    sgDrawText (b, buf, 100, 100, color);
 
                     //
                     // Update/display the BMP
@@ -644,13 +715,11 @@ int main (void) {
         }
 
         sgQuit();
-        sgQuit();
     }
 
     FREE_BMP (b);
-    FREE_BMP (b);
 
-    printf ("Exiting With Sucess KEY: %d\n", key);
+    printf ("Exiting With Sucess KEY: %d >>> nread: %d\n", key, nread);
 
     return 0;
 }
