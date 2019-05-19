@@ -112,6 +112,7 @@ static int mouse_event (void) {
 
 int keyboard_event (void) {
     unsigned char buf [5];
+//    int i, pressed;
     if ((nread = read(FB.tty_fd, buf, sizeof(buf))) < 1) {
         return 0;
     }
@@ -182,7 +183,6 @@ int keyboard_event (void) {
             //------------------------
             if (key=='1') key = SGK_F10;
             else
-//            if (buf[3]=='3') key = SGK_F11;
             if (key=='3') key = SGK_F11;
             else
             if (key=='4') key = SGK_F12;
