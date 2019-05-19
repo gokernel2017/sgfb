@@ -8,9 +8,6 @@
 // COMPILE:
 //   gcc sgfb.c -o sgfb -O1 -Wall
 //
-// BETA:
-//   Implemented draw only in 32 bpp ( 4 bytes ):
-//
 // START DATE: 05/05/2019 - 07:00
 //
 // BY: Francisco - gokernel@hotmail.com
