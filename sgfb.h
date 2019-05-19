@@ -11,6 +11,13 @@
 //
 //--------------------------------------------------------------------
 //
+#ifndef _SGFB_H_
+#define _SGFB_H_
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #include <string.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -35,12 +42,14 @@
 #define SGFB_VERSION_PATCH  0
 #define SGFB_VERSION_NAME   "BETA"
 
-#define LIBIMPORT extern
+#define LIBIMPORT           extern
 
-#define UCHAR unsigned char
-#define COLOR_WHITE32 16777215
+#define UCHAR               unsigned char
+#define COLOR_WHITE32       16777215
 
-#define FREE_BMP(b) sgFreeBmp(b); b=NULL;
+#define FREE_BMP(b) sgFreeBmp(b); b = NULL;
+
+#define CTRL_KEY(k) ((k) & 0x1f)
 
 //---------------------------
 // START KEYS:
@@ -112,18 +121,25 @@ typedef struct {
 //-----------------  PUBLIC API  ----------------
 //-----------------------------------------------
 //
-LIBIMPORT int   sgInit      (void);
-LIBIMPORT void  sgQuit      (void);
-LIBIMPORT int   sgEvent     (SG_Event *ev);
+LIBIMPORT int   sgInit          (void);
+LIBIMPORT void  sgQuit          (void);
+LIBIMPORT int   sgEvent         (SG_Event *ev);
 
-LIBIMPORT BMP * sgNewBmp    (int w, int h); // 16/32 BPP
+LIBIMPORT BMP * sgNewBmp        (int w, int h); // 16/32 BPP
 
-LIBIMPORT void  sgBlit16    (BMP *bmp);
-LIBIMPORT void  sgBlit32    (BMP *bmp);
+LIBIMPORT void  sgBlit16        (BMP *bmp);
+LIBIMPORT void  sgBlit32        (BMP *bmp);
 
 // 16/32 BPP:
-LIBIMPORT void  sgDrawRect  (BMP *bmp, int x, int y, int w, int h, int color);
-LIBIMPORT void  sgDrawText  (BMP *bmp, char *text, int x, int y, int color);
+LIBIMPORT void  sgDrawRect      (BMP *bmp, int x, int y, int w, int h, int color);
+LIBIMPORT void  sgDrawRectFill  (BMP *bmp, int x, int y, int w, int h, int color);
+LIBIMPORT void  sgDrawText      (BMP *bmp, char *text, int x, int y, int color);
 
-LIBIMPORT void  sgFreeBmp   (BMP *bmp);
+
+LIBIMPORT void  sgFreeBmp       (BMP *bmp);
+
+#ifdef __cplusplus
+}
+#endif
+#endif // ! _SGFB_H_
 

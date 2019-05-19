@@ -114,14 +114,20 @@ static int mouse_event (void) {
 }
 
 int keyboard_event (void) {
-    unsigned char buf [20];
-//    int i;
+    unsigned char buf [5];
     if ((nread = read(FB.tty_fd, buf, sizeof(buf))) < 1) {
         return 0;
     }
-//    for (i = 0; i < nread; i++) {
-//        key = buf[i] & 0x7F;
-//    }
+/*
+    for (i = 0; i < nread; i++) {
+        key = buf[i] & 0x7F;
+        if (buf[i] & 0x80 ) {
+            pressed = 0;
+        } else {
+            pressed = 1;
+        }
+    }
+*/
     key = buf[0] & 0x7F;
     if (nread == 1)
         return 1;
@@ -179,6 +185,7 @@ int keyboard_event (void) {
             //------------------------
             if (key=='1') key = SGK_F10;
             else
+//            if (buf[3]=='3') key = SGK_F11;
             if (key=='3') key = SGK_F11;
             else
             if (key=='4') key = SGK_F12;
@@ -240,10 +247,18 @@ int sgInit (void) {
         }
         tcgetattr(FB.tty_fd, &FB.tty_oldconfig);
 
+
         FB.tty_config = FB.tty_oldconfig;
         FB.tty_config.c_iflag = 0;
         FB.tty_config.c_lflag &= ~(ECHO | ICANON | ISIG);
 
+/*
+    // SDL CONFIG:
+		FB.tty_config.c_lflag &= ~(ICANON | ECHO | ISIG);
+		FB.tty_config.c_iflag &= ~(ISTRIP | IGNCR | ICRNL | INLCR | IXOFF | IXON);
+		FB.tty_config.c_cc[VMIN] = 0;
+		FB.tty_config.c_cc[VTIME] = 0;
+*/
         tcsetattr(FB.tty_fd, TCSAFLUSH, &FB.tty_config);
 
         printf("\e[?25l");
@@ -451,7 +466,20 @@ void sgDrawVline32 (BMP *bmp, int x, int y1, int y2, int color) {
     }
 }
 
-void sgFillRect (BMP *bmp, int x, int y, int w, int h, int color) {
+void sgDrawRectFill (BMP *bmp, int x, int y, int w, int h, int color) {
+    int i, width = x + w;
+    if (FB.bpp==32) {
+        for (i = 0; i < h; i++) {
+            sgDrawHline32 (bmp, x, y++, width, color);
+        }
+        return;
+    }
+    if (FB.bpp==16) {
+        for (i = 0; i < h; i++) {
+            sgDrawHline16 (bmp, x, y++, width, color);
+        }
+        return;
+    }
 }
 
 void sgDrawRect (BMP *bmp, int x, int y, int w, int h, int color) {
@@ -460,8 +488,9 @@ void sgDrawRect (BMP *bmp, int x, int y, int w, int h, int color) {
         sgDrawHline32(bmp, x, y+h, x+w, color);
         sgDrawVline32(bmp, x, y, y+h, color);
         sgDrawVline32(bmp, x+w, y, y+h, color);
+        return;
     }
-    else if (FB.bpp==16) {
+    if (FB.bpp==16) {
         sgDrawHline16(bmp, x, y, x+w, color);
         sgDrawHline16(bmp, x, y+h, x+w, color);
         sgDrawVline16(bmp, x, y, y+h, color);
@@ -638,11 +667,11 @@ int sgEvent (SG_Event *ev) {
 int main (void) {
     int color;
     char buf[100];
-    BMP *b = NULL;
+    BMP *bmp = NULL;
 
     if (sgInit()) {
 
-        if ((b = sgNewBmp(800,600)) == NULL)
+        if ((bmp = sgNewBmp(800,600)) == NULL)
             return -1;
 
         if (FB.bpp == 16)
@@ -651,15 +680,15 @@ int main (void) {
             color = makecol32(255,130,30);
         }
 
-        sgDrawRect (b, 50, 50, 450, 150, color);
+        sgDrawRect (bmp, 50, 50, 450, 150, color);
         sprintf (buf, "%s", "Move The Mouse | Press Any Key");
-        sgDrawText (b, "Please Wait 15 SECONDS: ...", 100, 75, color);
-        sgDrawText (b, buf, 100, 100, color);
-        sgDrawText (b, "To exit press the key: ESC", 100, 125, color);
+        sgDrawText (bmp, "Please Wait 15 SECONDS: ...", 100, 75, color);
+        sgDrawText (bmp, buf, 100, 100, color);
+        sgDrawText (bmp, "To exit press the key: ESC", 100, 125, color);
 
-        if (FB.bpp == 32 && b) {
+        if (FB.bpp == 32 && bmp) {
 
-            sgBlit32 (b);
+            sgBlit32 (bmp);
 
             for (;;) {
 
@@ -677,30 +706,13 @@ int main (void) {
                     }
 
                     // bg: FPS test
-                    //---------------------------------------
-                    sgDrawHline32 (b, 100, 100, 430, 0);  // -
-                    sgDrawHline32 (b, 100, 101, 430, 0);  // -
-                    sgDrawHline32 (b, 100, 102, 430, 0);  // -
-                    sgDrawHline32 (b, 100, 103, 430, 0);  // -
-                    sgDrawHline32 (b, 100, 104, 430, 0);  // -
-                    sgDrawHline32 (b, 100, 105, 430, 0);  // -
-                    sgDrawHline32 (b, 100, 106, 430, 0);  // -
-                    sgDrawHline32 (b, 100, 107, 430, 0);  // -
-                    sgDrawHline32 (b, 100, 108, 430, 0);  // -
-                    sgDrawHline32 (b, 100, 109, 430, 0);  // -
-                    sgDrawHline32 (b, 100, 110, 430, 0);  // -
-                    sgDrawHline32 (b, 100, 111, 430, 0);  // -
-                    sgDrawHline32 (b, 100, 112, 430, 0);  // -
-                    sgDrawHline32 (b, 100, 113, 430, 0);  // -
-                    sgDrawHline32 (b, 100, 114, 430, 0);  // -
-                    //---------------------------------------
-
-                    sgDrawText (b, buf, 100, 100, color);
+                    sgDrawRectFill (bmp, 100, 100, 300, 15, 12345);
+                    sgDrawText (bmp, buf, 100, 100, color);
 
                     //
                     // Update/display the BMP
                     //
-                    sgBlit32 (b);
+                    sgBlit32 (bmp);
 
                 }// if (sgEvent(&event))
 
@@ -711,13 +723,14 @@ int main (void) {
         }// if (FB.bpp == 32 && b)
 
         if (FB.bpp == 16) {
-            sgBlit16 (b);
+            sgBlit16 (bmp);
         }
 
         sgQuit();
     }
 
-    FREE_BMP (b);
+    FREE_BMP (bmp);
+    FREE_BMP (bmp);
 
     printf ("Exiting With Sucess KEY: %d >>> nread: %d\n", key, nread);
 
